@@ -9,16 +9,25 @@ bool isComment(const string &s) {
     return false;
 }
 
+bool dfs(int u, unordered_map<int, vector<int>> &G,
+         unordered_map<int,bool> &vis, unordered_map<int,bool> &instack)
+{
+    vis[u] = instack[u] = true;
+    for (int v : G[u]) {
+        if (!vis[v] && dfs(v, G, vis, instack)) return true;
+        if (instack[v]) return true;
+    }
+    instack[u] = false;
+    return false;
+}
+
 int main() {
 
     int fd = open("data.txt", O_RDONLY);
-    if (fd < 0) {
-        perror("File open failed");
-        return 1;
-    }
+    if (fd < 0) { perror("File open failed"); return 1; }
 
-    char buffer[4096];
-    int bytes = read(fd, buffer, sizeof(buffer));
+    char buf[4096];
+    int bytes = read(fd, buf, sizeof(buf));
     close(fd);
 
     if (bytes <= 0) {
@@ -26,9 +35,8 @@ int main() {
         return 1;
     }
 
-    buffer[bytes] = '\0';
-    stringstream ss(buffer);
-
+    buf[bytes] = '\0';
+    stringstream ss(buf);
     string line;
     vector<string> tokens;
 
@@ -40,13 +48,13 @@ int main() {
     }
 
     if (tokens.size() < 3) {
-        cout << "❌ ERROR: Input too small or missing sections.\n";
+        cout << "❌ ERROR: Invalid or incomplete data.\n";
         return 1;
     }
 
     int idx = 0;
     int n = stoi(tokens[idx++]); 
-    int m = stoi(tokens[idx++]);   
+    int m = stoi(tokens[idx++]);  
 
     vector<vector<int>> alloc(n, vector<int>(m));
     vector<vector<int>> maxm(n, vector<int>(m));
@@ -54,33 +62,47 @@ int main() {
 
     for (int i = 0; i < n; i++) {
         stringstream row(tokens[idx++]);
-        for (int j = 0; j < m; j++) {
-            if (!(row >> alloc[i][j])) {
-                cout << "❌ ERROR: Invalid Allocation row at P" << i << "\n";
-                return 1;
-            }
-        }
+        for (int j = 0; j < m; j++)
+            row >> alloc[i][j];
     }
 
     for (int i = 0; i < n; i++) {
         stringstream row(tokens[idx++]);
-        for (int j = 0; j < m; j++) {
-            if (!(row >> maxm[i][j])) {
-                cout << "❌ ERROR: Invalid Max row at P" << i << "\n";
-                return 1;
-            }
-        }
+        for (int j = 0; j < m; j++)
+            row >> maxm[i][j];
     }
 
     {
         stringstream row(tokens[idx++]);
-        for (int j = 0; j < m; j++) {
-            if (!(row >> avail[j])) {
-                cout << "❌ ERROR: Invalid Available vector.\n";
-                return 1;
-            }
+        for (int j = 0; j < m; j++)
+            row >> avail[j];
+    }
+
+    unordered_map<int, vector<int>> G;
+
+    for (int p = 0; p < n; p++) {
+        for (int r = 0; r < m; r++) {
+
+            if (alloc[p][r] > 0)
+                G[100 + r].push_back(p);    
+
+            if (maxm[p][r] - alloc[p][r] > 0)
+                G[p].push_back(100 + r);     
         }
     }
+
+    unordered_map<int,bool> vis, instack;
+    bool circularWait = false;
+
+    for (auto &x : G)
+        if (!vis[x.first] && dfs(x.first, G, vis, instack))
+            circularWait = true;
+
+    cout << "\n================ CIRCULAR WAIT CHECK ================\n";
+    if (circularWait)
+        cout << "🔴 Circular Wait Detected (Cycle in RAG)\n";
+    else
+        cout << "🟢 No Circular Wait.\n";
 
 
     vector<vector<int>> need(n, vector<int>(m));
@@ -88,28 +110,26 @@ int main() {
         for (int j = 0; j < m; j++)
             need[i][j] = maxm[i][j] - alloc[i][j];
 
-    vector<int> safeSeq;
     vector<bool> done(n, false);
+    vector<int> safe;
 
-    for (int k = 0; k < n; k++) {
+    vector<int> avail_copy = avail;
+
+    for (int step = 0; step < n; step++) {
         bool found = false;
 
         for (int p = 0; p < n; p++) {
             if (!done[p]) {
-                bool canRun = true;
-                for (int r = 0; r < m; r++) {
-                    if (need[p][r] > avail[r]) {
-                        canRun = false;
-                        break;
-                    }
-                }
+                bool ok = true;
+                for (int r = 0; r < m; r++)
+                    if (need[p][r] > avail_copy[r])
+                        ok = false;
 
-                if (canRun) {
-
+                if (ok) {
                     for (int r = 0; r < m; r++)
-                        avail[r] += alloc[p][r];
+                        avail_copy[r] += alloc[p][r];
 
-                    safeSeq.push_back(p);
+                    safe.push_back(p);
                     done[p] = true;
                     found = true;
                 }
@@ -119,57 +139,43 @@ int main() {
         if (!found) break;
     }
 
-    if (safeSeq.size() != n) {
-        cout << "\n🔴 DEADLOCK Detected! No Safe Sequence.\n";
+    cout << "\n================ BANKER'S ALGORITHM ================\n";
+    if (safe.size() != n) {
+        cout << "🔴 Deadlock Detected — No Safe Sequence.\n";
         return 0;
     }
 
+    cout << "🟢 Safe State Found\nSafe Sequence: ";
+    for (int p : safe) cout << "P" << p << " ";
+    cout << "\n";
+
     
-    cout << "\n🟢 No Deadlock. Safe Sequence Found.\n";
-    cout << "➡ Safe Sequence: ";
-    for (int x : safeSeq) cout << "P" << x << " ";
-    cout << "\n\n📌 Starting Process Simulation...\n\n";
+    cout << "\n================ PROCESS SIMULATION ================\n";
 
-    idx = 2;
-    avail.clear();
-    avail.resize(m);
+    vector<int> availSim = avail;
 
-    idx = 2 + n + n; 
-    {
-        stringstream row(tokens[idx++]);
-        for (int j = 0; j < m; j++)
-            row >> avail[j];
-    }
+    for (int p : safe) {
 
-    for (int process : safeSeq) {
-        cout << "-------------------------------------------\n";
-        cout << "🔹 Process P" << process << " requesting resources:\n";
+        cout << "\n▶ Running P" << p << "\n";
         cout << "   Need = [ ";
-        for (int j = 0; j < m; j++) cout << need[process][j] << " ";
+        for (int j = 0; j < m; j++) cout << need[p][j] << " ";
+        cout << "] | Available = [ ";
+        for (int j = 0; j < m; j++) cout << availSim[j] << " ";
         cout << "]\n";
 
-        cout << "   Available = [ ";
-        for (int j = 0; j < m; j++) cout << avail[j] << " ";
-        cout << "]\n";
-
-        cout << "\n   ✔ Resources allocated to P" << process << "\n";
-        cout << "   ✔ P" << process << " is RUNNING...\n";
         sleep(1);
 
-        cout << "   ✔ P" << process << " COMPLETED.\n";
-        cout << "   ✔ Releasing resources back to system.\n";
+        cout << "   ✔ P" << p << " completed. Releasing resources.\n";
 
         for (int j = 0; j < m; j++)
-            avail[j] += alloc[process][j];
+            availSim[j] += alloc[p][j];
 
         cout << "   New Available = [ ";
-        for (int j = 0; j < m; j++) cout << avail[j] << " ";
-        cout << "]\n\n";
+        for (int j = 0; j < m; j++) cout << availSim[j] << " ";
+        cout << "]\n";
     }
 
-    cout << "-------------------------------------------\n";
-    cout << "🎉 All processes finished successfully!\n";
-    cout << "🎉 System remained in a SAFE state.\n";
+    cout << "\n🎉 All Processes Completed Successfully — SAFE EXECUTION.\n";
 
     return 0;
 }
