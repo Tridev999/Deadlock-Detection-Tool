@@ -33,11 +33,13 @@ bool dfs(int u, unordered_map<int, vector<int>> &G,
 
 
 int main() {
-
+    string filename;
+    cout << CYAN << "\nEnter input file name: " << RESET;
+    cin >> filename;
     cout << YELLOW << "\n========= LOADING data.txt =========\n" << RESET;
 
     
-    int fd = open("data.txt", O_RDONLY);
+    int fd = open(filename.c_str(), O_RDONLY);
     if (fd < 0) { perror("File open failed"); return 1; }
 
     char buf[8192];
